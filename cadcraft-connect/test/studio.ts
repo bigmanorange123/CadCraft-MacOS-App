@@ -6,6 +6,7 @@ const tmp = mkdtempSync(join(tmpdir(), "ccc-studio-"));
 const { ConnectService } = await import("../src/service.js");
 const { McpLogin } = await import("../src/mcpLogin.js");
 const { Store, plainVault } = await import("../src/state.js");
+const { ensureCadcraftStudioReady } = await import("../src/cadcraftStudio.js");
 let ensureCalls = 0;
 
 let pass = 0, fail = 0;
@@ -60,6 +61,37 @@ try {
   await service.stop();
   rmSync(tmp, { recursive: true, force: true });
 }
+
+let downloadAttempts = 0;
+let firstInstallError = "";
+let retryError = "";
+try {
+  await ensureCadcraftStudioReady(undefined, {
+    findApp: async () => undefined,
+    install: async () => {
+      downloadAttempts++;
+      throw new Error("bundle verification failed");
+    }
+  });
+} catch (error) {
+  firstInstallError = (error as Error).message;
+}
+try {
+  await ensureCadcraftStudioReady(undefined, {
+    findApp: async () => undefined,
+    install: async () => {
+      downloadAttempts++;
+      throw new Error("bundle verification failed");
+    }
+  });
+} catch (error) {
+  retryError = (error as Error).message;
+}
+ok(
+  downloadAttempts === 1 && firstInstallError.includes("bundle verification failed") &&
+    retryError.includes("To avoid another large download"),
+  "failed Studio installation is not downloaded repeatedly"
+);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

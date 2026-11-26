@@ -10,7 +10,15 @@ import { pipeline } from "node:stream/promises";
 const STUDIO_BUNDLE_ID = "com.getcadcraft.studio";
 const RELEASE_API = "https://api.github.com/repos/getcadcraft/studio/releases/latest";
 const MAX_DMG_SIZE = 600 * 1024 * 1024;
+const INSTALL_RETRY_DELAY_MS = 5 * 60 * 1000;
 const CONNECT_FILE = join(homedir(), "Library", "Application Support", "CadCraft Studio", "connect.json");
+let installRetryAt = 0;
+let lastInstallError = "";
+
+interface StudioInstallDependencies {
+  findApp?: typeof findStudioApp;
+  install?: typeof installLatestCadcraftStudio;
+}
 
 interface GitHubAsset {
   name: string;
@@ -251,9 +259,27 @@ async function studioEndpointReady(): Promise<boolean> {
   }
 }
 
-export async function ensureCadcraftStudioReady(log?: (message: string) => void): Promise<void> {
-  let app = await findStudioApp(log);
-  if (!app) app = await installLatestCadcraftStudio(log);
+export async function ensureCadcraftStudioReady(
+  log?: (message: string) => void,
+  dependencies: StudioInstallDependencies = {}
+): Promise<void> {
+  let app = await (dependencies.findApp ?? findStudioApp)(log);
+  if (!app) {
+    if (Date.now() < installRetryAt) {
+      const retrySeconds = Math.ceil((installRetryAt - Date.now()) / 1000);
+      throw new Error(`The last CadCraft Studio installation failed: ${lastInstallError}. ` +
+        `To avoid another large download, Connect will retry in ${retrySeconds} seconds.`);
+    }
+    try {
+      app = await (dependencies.install ?? installLatestCadcraftStudio)(log);
+      installRetryAt = 0;
+      lastInstallError = "";
+    } catch (error) {
+      installRetryAt = Date.now() + INSTALL_RETRY_DELAY_MS;
+      lastInstallError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  }
   if (await studioEndpointReady()) return;
 
   await verifyStudioApp(app);
