@@ -37,10 +37,10 @@ Developer ID certificate for distribution; otherwise the script creates an ad-ho
 local testing.
 
 GitHub tag releases (`v*`) are built on separate Intel and Apple Silicon runners and uploaded as
-architecture-specific DMGs with an Applications shortcut for drag-to-install. Release automation requires these repository secrets: `MACOS_CERTIFICATE_P12_BASE64`,
-`MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGNING_IDENTITY`, `APPLE_ID`,
-`APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. The workflow signs and notarizes each app before
-publishing it. A manual workflow run builds unsigned test artifacts and does not publish a release.
+architecture-specific, ad-hoc-signed DMGs with an Applications shortcut for drag-to-install. No
+Apple Developer account or signing secrets are required. macOS will show an unverified developer
+warning when users first open the app; they can control-click it and choose **Open** to proceed. A
+manual workflow run builds test artifacts and does not publish a release.
 
 ## Run
 ```

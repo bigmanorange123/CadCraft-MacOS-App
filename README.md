@@ -19,28 +19,21 @@ and network access are still required.
 
 GitHub Actions builds separate Apple Silicon (`arm64`) and Intel (`x86_64`) DMGs when a version tag
 is pushed. **Pushing `main` alone does not publish a release**, so the Releases page stays empty
-until the first tagged release completes.
+until the first tagged release completes. The app is ad-hoc signed, not notarized, so macOS will
+show an **unverified developer** warning when it is first opened.
 
-Before tagging a release, add these repository secrets under **Settings → Secrets and variables →
-Actions**:
-
-- `MACOS_CERTIFICATE_P12_BASE64`
-- `MACOS_CERTIFICATE_PASSWORD`
-- `MACOS_SIGNING_IDENTITY`
-- `APPLE_ID`
-- `APPLE_APP_SPECIFIC_PASSWORD`
-- `APPLE_TEAM_ID`
-
-Then push a version tag, for example:
+No Apple Developer account or signing secrets are required. To publish a release, push a version
+tag, for example:
 
 ```sh
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The workflow builds, signs, notarizes, and publishes both DMGs on the GitHub Releases page. A
-manual **workflow_dispatch** run creates unsigned test DMGs as workflow artifacts; it does not
-publish a release.
+The workflow builds and publishes both DMGs on the GitHub Releases page. When installing, drag the
+app to Applications, then control-click it and choose **Open** to confirm you want to run it. A
+manual **workflow_dispatch** run creates test DMGs as workflow artifacts; it does not publish a
+release.
 
 ## Development
 
