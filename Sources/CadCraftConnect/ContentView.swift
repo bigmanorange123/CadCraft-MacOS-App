@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum AppPage: String, CaseIterable {
     case home = "Overview"
@@ -362,7 +363,7 @@ struct ContentView: View {
                         Text("Connection details")
                             .font(.headline)
                         detail("BRIDGE", "127.0.0.1:7391")
-                        detail("STUDIO MCP", "Authenticated loopback")
+                        detail("CADCRAFT CONTROL", "Authenticated loopback")
                         detail("AUTH CALLBACK", "127.0.0.1:38472")
                         detail("CREDENTIALS", "Encrypted with macOS Keychain")
                     }
@@ -473,6 +474,7 @@ struct ContentView: View {
         if runtime.status == "error" { return "Needs attention" }
         switch runtime.status {
         case "launching-studio": return "Opening CadCraft Studio"
+        case "launching-cadcraft": return "Opening CadCraft"
         case "logging-in": return "Signing in"
         case "choosing-domain": return "Choose domain"
         case "provisioning": return "Creating tunnel"
@@ -492,6 +494,8 @@ struct ContentView: View {
         switch runtime.status {
         case "launching-studio":
             return "An agent requested a tool. Opening CadCraft Studio and waiting for its secure connection."
+        case "launching-cadcraft":
+            return "An agent requested a tool. Opening CadCraft and waiting for its secure connection."
         case "logging-in":
             return "Complete Cloudflare sign-in in your browser and return here."
         case "choosing-domain":
@@ -505,7 +509,7 @@ struct ContentView: View {
         default:
             break
         }
-        return "Sign in to Cloudflare and set up the tunnel. CadCraft Studio opens only when an agent requests a tool."
+        return "Sign in to Cloudflare and set up the tunnel. CadCraft opens only when an agent requests a tool."
     }
 
     private func detail(_ title: String, _ value: String) -> some View {
@@ -528,9 +532,57 @@ private struct SecuritySetupPage: View {
     @ObservedObject var launchAtLogin: LaunchAtLoginManager
     @Binding var confirmDisconnectAll: Bool
     @Binding var confirmTeardown: Bool
+    @State private var cadcraftAppLocationError: String?
 
     var body: some View {
         VStack(spacing: 20) {
+            Panel {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("CadCraft app")
+                        .font(.headline)
+                    Text("CadCraft Connect does not install CadCraft. Install it with ArtCraft Launcher, then select CadCraft.app here. Connect opens the selected app only when an agent requests a tool.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if runtime.cadcraftAppPath.isEmpty {
+                        Text("No custom location selected. Connect will check the standard Applications folders.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.muted)
+                    } else {
+                        Text(runtime.cadcraftAppPath)
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.muted)
+                            .textSelection(.enabled)
+                    }
+                    if let cadcraftAppLocationError {
+                        Text(cadcraftAppLocationError)
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.red)
+                    }
+                    HStack {
+                        Button("Download CadCraft") {
+                            if let url = URL(string: "https://getartcraft.com/apps/cadcraft") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        Button("Choose app location…") {
+                            chooseCadcraftApp()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        if !runtime.cadcraftAppPath.isEmpty {
+                            Button("Clear location") {
+                                cadcraftAppLocationError = nil
+                                Task { await runtime.setCadcraftAppPath(nil) }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .task { await runtime.loadCadcraftAppPath() }
+
             Panel {
                 VStack(alignment: .leading, spacing: 18) {
                     Label("Cloudflare account", systemImage: "person.crop.circle.badge.checkmark")
@@ -700,6 +752,27 @@ private struct SecuritySetupPage: View {
                 }
             }
         }
+    }
+
+    private func chooseCadcraftApp() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose CadCraft"
+        panel.message = "Select the CadCraft application bundle installed by ArtCraft Launcher."
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.treatsFilePackagesAsDirectories = false
+
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        guard Bundle(url: selected)?.bundleIdentifier == "ai.storyteller.cadcraft" else {
+            cadcraftAppLocationError = "That app is not the CadCraft application installed by ArtCraft Launcher."
+            return
+        }
+
+        cadcraftAppLocationError = nil
+        Task { await runtime.setCadcraftAppPath(selected.path) }
     }
 
     private func securityRow(_ title: String, _ description: String) -> some View {

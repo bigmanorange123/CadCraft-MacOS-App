@@ -46,6 +46,7 @@ final class ConnectRuntime: ObservableObject {
     @Published private(set) var status = "idle"
     @Published private(set) var statusDetail: String?
     @Published private(set) var connectorURL: String?
+    @Published private(set) var cadcraftAppPath = ""
     @Published private(set) var approvals: [ConnectApproval] = []
     @Published private(set) var logs: [ConnectLogEntry] = []
     @Published var zonePrompt: ConnectZonePrompt?
@@ -60,7 +61,7 @@ final class ConnectRuntime: ObservableObject {
 
     var isReady: Bool { status == "ready" }
     var isWorking: Bool {
-        ["launching-studio", "logging-in", "choosing-domain", "provisioning",
+        ["launching-studio", "launching-cadcraft", "logging-in", "choosing-domain", "provisioning",
          "starting", "connecting"].contains(status)
     }
 
@@ -103,6 +104,23 @@ final class ConnectRuntime: ObservableObject {
     func disconnectAll() async {
         do {
             _ = try await command("disconnectAll")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func loadCadcraftAppPath() async {
+        do {
+            cadcraftAppPath = try await command("getCadcraftAppPath") as? String ?? ""
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func setCadcraftAppPath(_ path: String?) async {
+        do {
+            _ = try await command("setCadcraftAppPath", parameters: ["path": path ?? ""])
+            cadcraftAppPath = path ?? ""
         } catch {
             alertMessage = error.localizedDescription
         }
@@ -333,28 +351,6 @@ final class ConnectRuntime: ObservableObject {
                 return
             }
             zonePrompt = ConnectZonePrompt(id: id, zones: zones)
-        case "locateApp":
-            let panel = NSOpenPanel()
-            panel.title = "Choose CadCraft"
-            panel.message = "Select the CadCraft app or its CADCraft executable."
-            panel.directoryURL = URL(fileURLWithPath: "/Applications")
-            panel.canChooseFiles = true
-            panel.canChooseDirectories = true
-            panel.allowsMultipleSelection = false
-            panel.treatsFilePackagesAsDirectories = true
-            guard panel.runModal() == .OK, let selected = panel.url else {
-                respond(to: id, value: NSNull())
-                return
-            }
-            let binary = selected.pathExtension == "app"
-                ? selected.appendingPathComponent("Contents/MacOS/CADCraft")
-                : selected
-            guard FileManager.default.isExecutableFile(atPath: binary.path) else {
-                respond(to: id, value: NSNull())
-                alertMessage = "The selected item does not contain an executable named CADCraft."
-                return
-            }
-            respond(to: id, value: binary.path)
         default:
             respond(to: id, value: NSNull())
         }

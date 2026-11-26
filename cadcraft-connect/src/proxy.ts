@@ -13,16 +13,22 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
+export type ProgressReporter = (message: string) => Promise<void>;
+
 export type ProxyOptions =
   | {
       kind: "stdio";
       command: string;
       args: string[];
       env?: Record<string, string>;
-      ensureToolCall?: (name: string) => Promise<void>;
+      ensureToolCall?: (name: string, reportProgress: ProgressReporter) => Promise<void>;
     }
   /** `open` is called on every (re)connect, so it can relaunch CadCraft if it was closed. */
-  | { kind: "inprocess"; open: () => Promise<{ server: McpServer; onClose: (cb: () => void) => void }> };
+  | {
+      kind: "inprocess";
+      open: () => Promise<{ server: McpServer; onClose: (cb: () => void) => void }>;
+      ensureToolCall?: (name: string, reportProgress: ProgressReporter) => Promise<void>;
+    };
 
 export class CadcraftProxy {
   private ready?: Promise<Client>;
@@ -76,8 +82,16 @@ export class CadcraftProxy {
           : tool)
       };
     });
-    server.setRequestHandler(CallToolRequestSchema, (r) => this.serial(async () => {
-      if (this.o.kind === "stdio") await this.o.ensureToolCall?.(r.params.name);
+    server.setRequestHandler(CallToolRequestSchema, (r, extra) => this.serial(async () => {
+      const reportProgress: ProgressReporter = async (message) => {
+        const progressToken = extra._meta?.progressToken;
+        if (progressToken === undefined) return;
+        await extra.sendNotification({
+          method: "notifications/progress",
+          params: { progressToken, progress: 0, total: 1, message }
+        });
+      };
+      await this.o.ensureToolCall?.(r.params.name, reportProgress);
       if (this.o.kind === "stdio" && this.o.ensureToolCall && r.params.name === "studio_status") {
         let tools = (await client.listTools()).tools;
         const deadline = Date.now() + 5_000;

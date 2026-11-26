@@ -26,7 +26,7 @@ export function readToken(port: number): string {
 export class ControlClient extends EventEmitter {
   private sock?: Socket; private nextId = 1; private closed = false; private connecting?: Promise<void>;
   private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
-  constructor(private port: number, private ensureReady?: () => Promise<unknown>) { super(); }
+  constructor(private port: number) { super(); }
 
   connect(): Promise<void> {
     if (this.sock && !this.closed) return Promise.resolve();
@@ -35,7 +35,6 @@ export class ControlClient extends EventEmitter {
   }
 
   private async open(): Promise<void> {
-    await this.ensureReady?.();
     this.token = readToken(this.port);
     const sock = (this.sock = createConnection({ host: "127.0.0.1", port: this.port }));
     await new Promise<void>((res, rej) => {
@@ -97,8 +96,8 @@ export class ControlClient extends EventEmitter {
 
 const text = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v ?? "ok") }] });
 
-export async function createControlMcpServer(port: number, ensureReady?: () => Promise<unknown>): Promise<{ server: McpServer; client: ControlClient }> {
-  const client = new ControlClient(port, ensureReady);
+export async function createControlMcpServer(port: number): Promise<{ server: McpServer; client: ControlClient }> {
+  const client = new ControlClient(port);
   const server = new McpServer({ name: "cadcraft", version: "0.1.0" });
 
   server.tool("engine_execute", "Run a CadCraft command with JSON parameters. Never opens a dialog.",

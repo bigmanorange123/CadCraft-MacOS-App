@@ -73,6 +73,7 @@ async function initialize(): Promise<ConnectService> {
 
   service = new ConnectService({
     mode: "cloudflare",
+    controlPort: 7979,
     vault,
     openUrl,
     cloudflaredPath: existsSync(bundledCloudflared) ? bundledCloudflared : undefined,
@@ -84,10 +85,6 @@ async function initialize(): Promise<ConnectService> {
       const zone = choice?.id ? zonesById.get(choice.id) : undefined;
       if (!zone) throw new Error("Choose one of the listed Cloudflare domains to continue.");
       return zone;
-    },
-    locateApp: async () => {
-      const response = await prompt("locateApp", {});
-      return typeof response === "string" && response ? response : undefined;
     },
   });
   service.on("status", (status: string, detail?: string) =>
@@ -126,6 +123,18 @@ async function handle(message: Message): Promise<void> {
       break;
     case "disconnectAll":
       svc.disconnectAllClaudeSessions();
+      break;
+    case "getCadcraftAppPath":
+      result = svc.getCadcraftAppPath();
+      break;
+    case "setCadcraftAppPath":
+      if (message.path === null || message.path === "") {
+        svc.setCadcraftAppPath(undefined);
+      } else if (typeof message.path === "string") {
+        svc.setCadcraftAppPath(message.path);
+      } else {
+        throw new Error("The CadCraft app location must be a path or empty.");
+      }
       break;
     case "decide":
       result = svc.decide(String(message.approvalId ?? ""), message.approve === true);

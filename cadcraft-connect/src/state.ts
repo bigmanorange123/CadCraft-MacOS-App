@@ -29,7 +29,7 @@ export interface State {
   refresh: Record<string, { grant: string; exp: number; clientId: string }>;
   revokedGrants: string[];
   tunnel?: TunnelInfo;
-  settings?: { cadcraftBin?: string };
+  settings?: { cadcraftAppPath?: string; cadcraftBin?: string };
   /** OUR login to Cloudflare's MCP server, sealed with the Vault */
   cloudflare?: { clientInfo?: string; tokens?: string };
 }

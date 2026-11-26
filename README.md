@@ -1,24 +1,24 @@
 # CadCraft Connect
 
-CadCraft Connect exposes the official CadCraft Studio MCP tools to Claude through a Cloudflare
-Tunnel and an authenticated MCP bridge.
+CadCraft Connect connects the CadCraft app installed by ArtCraft Launcher to Claude through a
+Cloudflare Tunnel and an authenticated MCP bridge.
 
 ## What it does
 
-- Sets up the connector without opening CadCraft Studio; opens Studio only when an agent requests a tool.
+- Uses the CadCraft app selected in **Security & setup** and opens it only when an agent requests a tool.
 - Signs in to Cloudflare using the system browser and creates a tunnel for a domain you choose.
 - Shows the connector URL to add in Claude under **Settings → Connectors → Add custom connector**.
-- If CadCraft Studio is missing, downloads and verifies the latest official release when an agent calls `studio_status`.
+- Does not download or install CadCraft. Install it with [ArtCraft Launcher](https://getartcraft.com/apps/cadcraft), then choose `CadCraft.app` in **Security & setup**.
 - Requires your approval for every new client. Check the browser's six-digit code against the
   request shown in the app before approving it.
 
 The SwiftUI app bundles Node.js, its production dependencies, and `cloudflared`. Users do not need
 to install Node, npm packages, or `cloudflared`. A Cloudflare account with a domain and network
-access are required. While Studio is closed, the connector exposes a status tool; requesting it
-installs and opens Studio if needed. The official Studio MCP bridge then supplies the Studio tools.
-Existing Studio installations are not replaced. CadCraft Connect checks for its own updates
-automatically and has a manual check in **Security & setup**. You can install a verified update
-there; Connect replaces its app bundle and restarts.
+access are required. While CadCraft is closed, the bridge exposes its tools and opens the selected
+app when the first tool is requested. If the app is missing or its selected location is invalid,
+Connect tells you to install it with ArtCraft Launcher or choose the correct location. CadCraft
+Connect checks for its own updates automatically and has a manual check in **Security & setup**.
+You can install a verified update there; Connect replaces its app bundle and restarts.
 You can also enable or disable starting at login there.
 
 ## Releases
