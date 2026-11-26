@@ -1,13 +1,20 @@
 # CadCraft Connect
 
-Mac menu-bar app that makes your local CadCraft usable from Claude in the browser.
+Native macOS app that makes CadCraft Studio's official MCP tools available to Claude through an
+authenticated Cloudflare Tunnel.
 
 ```
-Claude ──HTTPS──▶ Cloudflare Tunnel ──▶ 127.0.0.1:7391 (OAuth 2.1 bridge) ──in-process──▶ control port 127.0.0.1:7979 ──▶ CadCraft.app
+Claude ──HTTPS──▶ Cloudflare Tunnel ──▶ OAuth 2.1 bridge ──stdio──▶ @getcadcraft/mcp ──authenticated loopback──▶ CadCraft Studio
 ```
-**One click / one launch does everything.** It starts CadCraft with `--control 7979` (or reuses it if it's already
-running that way), talks to it over the control port, and if CadCraft is closed later it relaunches it and reconnects on
-the next request. No helper tabs, no `npx tsx`.
+**Connect first, open Studio on demand.** Cloudflare sign-in, tunnel setup, and tool discovery do not
+launch the CAD app. While Studio is closed, the bridge exposes `studio_status`. When an agent calls
+that tool, Connect reuses the installed Studio app or downloads the latest official release,
+verifies its published SHA-256 digest and macOS signature, installs it in `~/Applications`, and
+opens it. Studio's tools become available after the MCP bridge refreshes; the agent may need to
+refresh its tool list and retry. Existing Studio installations are not replaced.
+
+CadCraft Connect checks its GitHub releases for updates daily and offers a manual check and matching
+architecture download in **Security & setup**. Startup-at-login is opt-in and can be changed there.
 
 ## What it does on first launch
 1. **Logs into Cloudflare** through Cloudflare's MCP server (OAuth 2.1 + PKCE, system browser, loopback redirect, `state` checked). The login is encrypted at rest with a random AES-256 key stored in macOS Keychain.
@@ -19,7 +26,7 @@ the next request. No helper tabs, no `npx tsx`.
 In Claude: **Settings → Connectors → Add custom connector → paste the URL**.
 
 ## Requirements
-- macOS and CadCraft.app in `/Applications` (otherwise select it in the app's dialog)
+- macOS; CadCraft Studio is installed automatically on the first `studio_status` call if missing
 - A domain on Cloudflare (the tunnel needs a hostname). The Cloudflare login must allow: Cloudflare Tunnel (write), DNS (write), Zone (read).
 
 ## Native macOS app
@@ -29,7 +36,7 @@ The SwiftUI app in the repository root hosts this connection service directly. B
 ./scripts/build-app.sh
 ```
 
-The build machine needs Swift, Node 20+, and a `cloudflared` binary (or set `BUNDLED_NODE` and
+The build machine needs Swift, Node 20.19+, and a `cloudflared` binary (or set `BUNDLED_NODE` and
 `BUNDLED_CLOUDFLARED`). The resulting app bundles Node, the compiled service and its production
 dependencies, and `cloudflared`; users do not need to install Node, npm packages, or `cloudflared`.
 Build separately for each Mac architecture. Set `SIGNING_IDENTITY` to sign the app with a
@@ -52,11 +59,11 @@ npm run cli -- teardown                   # delete tunnel + DNS record
 ```
 The distributed app uses the SwiftUI interface and is built by GitHub Actions into separate Intel
 and Apple Silicon DMGs. Consumers do not run these npm commands.
-Options: `--control-port 7979`, `--cadcraft-app /path/to/CadCraft.app/Contents/MacOS/CADCraft`.
-Headless instead of the desktop app: `--stdio` (uses `cadcraft-cli mcp`; each process keeps its own drawing).
+By default, the CLI also connects to official CadCraft Studio. The legacy `--control-port 7979`
+and `--cadcraft-app` options select the older control-port integration. For a custom headless MCP
+server, use `--stdio` (or `CADCRAFT_CMD`).
 
-Tools Claude gets: `drawing_inspect`, `cmdline_script`, `cmdline_input`, `cmdline_key`, `cmdline_state`, `engine_commands`,
-`engine_execute`, `ui_render`, `app_save`. These can run ANY CadCraft command, including saving files, so only approve
+Studio determines the tools exposed to Claude. They can modify or save drawings, so only approve
 Claude sessions you trust.
 
 ## Auth design (public endpoint)
@@ -75,5 +82,5 @@ Claude sessions you trust.
 - Real Cloudflare login/tunnel creation (the Cloudflare MCP call needed approval that wasn't given, so the provisioning code follows the OpenAPI schemas but has never run against an account)
 - `cloudflared` startup and the signed/notarized GitHub release workflow
 - (verified by you on a real Mac: Cloudflare login, tunnel creation, tunnel connect, control bridge)
-- Auto-launching the real CadCraft.app and reconnect-after-quit are tested only against a fake control server
+- Installing and launching the real CadCraft Studio release requires validation on a Mac with network access
 - That claude.ai accepts this server's OAuth metadata. The Claude callback URLs in `src/oauthServer.ts` (`TRUSTED_REDIRECTS`) should be checked against Anthropic's current docs

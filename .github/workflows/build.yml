@@ -52,17 +52,17 @@ jobs:
           export APP_VERSION
           export BUNDLED_NODE="$(command -v node)"
           export BUNDLED_CLOUDFLARED="$(brew --prefix cloudflared)/bin/cloudflared"
-          APP="dist/CadCraft-Connect-${TARGET_ARCH}.app"
+          APP="dist/CadCraft Connect.app"
           ./scripts/build-app.sh "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           DMG_ROOT="$RUNNER_TEMP/CadCraft-Connect-dmg-${TARGET_ARCH}"
           mkdir -p "$DMG_ROOT"
           ditto "$APP" "$DMG_ROOT/$(basename "$APP")"
-          DMG="${APP%.app}.dmg"
+          DMG="dist/CadCraft-Connect-${TARGET_ARCH}.dmg"
           DMG_BACKGROUND="$RUNNER_TEMP/cadcraft-dmg-background.png"
           swift scripts/create-dmg-background.swift "$DMG_BACKGROUND" "$GITHUB_WORKSPACE/Recources/AppIcon.icns"
           create-dmg \
-            --volname "CadCraft Connect ${TARGET_ARCH}" \
+            --volname "CadCraft Connect" \
             --volicon "$GITHUB_WORKSPACE/Recources/AppIcon.icns" \
             --background "$DMG_BACKGROUND" \
             --window-pos 200 120 \

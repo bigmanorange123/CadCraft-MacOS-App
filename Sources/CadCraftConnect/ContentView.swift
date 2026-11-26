@@ -27,10 +27,13 @@ private enum AppTheme {
 
 struct ContentView: View {
     @ObservedObject var runtime: ConnectRuntime
+    @ObservedObject var updater: AppUpdater
+    @ObservedObject var launchAtLogin: LaunchAtLoginManager
 
     @State private var page: AppPage = .home
     @State private var confirmDisconnectAll = false
     @State private var confirmTeardown = false
+    @AppStorage("cadcraft-connect.startup-permission-answered") private var startupPermissionAnswered = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,6 +56,8 @@ struct ContentView: View {
                         case .settings:
                             SecuritySetupPage(
                                 runtime: runtime,
+                                updater: updater,
+                                launchAtLogin: launchAtLogin,
                                 confirmDisconnectAll: $confirmDisconnectAll,
                                 confirmTeardown: $confirmTeardown
                             )
@@ -229,6 +234,10 @@ struct ContentView: View {
 
     private var overview: some View {
         VStack(spacing: 20) {
+            if !startupPermissionAnswered && !launchAtLogin.isEnabled {
+                startupPermissionPrompt
+            }
+
             Panel {
                 HStack(spacing: 24) {
                     Image(systemName: runtime.isReady ? "network" : "lock.shield")
@@ -353,12 +362,39 @@ struct ContentView: View {
                         Text("Connection details")
                             .font(.headline)
                         detail("BRIDGE", "127.0.0.1:7391")
-                        detail("CAD CONTROL", "127.0.0.1:7979")
+                        detail("STUDIO MCP", "Authenticated loopback")
                         detail("AUTH CALLBACK", "127.0.0.1:38472")
                         detail("CREDENTIALS", "Encrypted with macOS Keychain")
                     }
                 }
                 .frame(width: 290)
+            }
+        }
+    }
+
+    private var startupPermissionPrompt: some View {
+        Panel {
+            HStack(spacing: 16) {
+                Image(systemName: "power.circle")
+                    .font(.system(size: 28))
+                    .foregroundStyle(AppTheme.orange)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Start CadCraft Connect at login?")
+                        .font(.headline)
+                    Text("You can change this anytime in Security & setup.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.muted)
+                }
+                Spacer()
+                Button("Not now") {
+                    startupPermissionAnswered = true
+                }
+                .buttonStyle(.bordered)
+                Button("Enable") {
+                    launchAtLogin.setEnabled(true)
+                    startupPermissionAnswered = true
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
     }
@@ -435,6 +471,15 @@ struct ContentView: View {
     private var statusDescription: String {
         if runtime.isReady { return "Connected" }
         if runtime.status == "error" { return "Needs attention" }
+        switch runtime.status {
+        case "launching-studio": return "Opening CadCraft Studio"
+        case "logging-in": return "Signing in"
+        case "choosing-domain": return "Choose domain"
+        case "provisioning": return "Creating tunnel"
+        case "starting": return "Starting bridge"
+        case "connecting": return "Connecting tunnel"
+        default: break
+        }
         if runtime.isWorking { return "Setting up" }
         return "Not connected"
     }
@@ -444,10 +489,23 @@ struct ContentView: View {
         if runtime.isReady {
             return "The authenticated bridge is running. New Claude clients will wait for your approval here."
         }
-        if runtime.isWorking {
-            return "Follow the system-browser sign-in and choose a Cloudflare domain if asked. This can take a minute."
+        switch runtime.status {
+        case "launching-studio":
+            return "An agent requested a tool. Opening CadCraft Studio and waiting for its secure connection."
+        case "logging-in":
+            return "Complete Cloudflare sign-in in your browser and return here."
+        case "choosing-domain":
+            return "Choose the Cloudflare domain that should host your connector."
+        case "provisioning":
+            return "Creating the Cloudflare tunnel and DNS record."
+        case "starting":
+            return "Starting the local authenticated bridge."
+        case "connecting":
+            return "Waiting for the Cloudflare tunnel to connect."
+        default:
+            break
         }
-        return "Sign in to Cloudflare and set up the tunnel. If CadCraft is not already running, the app will find or ask you to locate it."
+        return "Sign in to Cloudflare and set up the tunnel. CadCraft Studio opens only when an agent requests a tool."
     }
 
     private func detail(_ title: String, _ value: String) -> some View {
@@ -466,6 +524,8 @@ struct ContentView: View {
 
 private struct SecuritySetupPage: View {
     @ObservedObject var runtime: ConnectRuntime
+    @ObservedObject var updater: AppUpdater
+    @ObservedObject var launchAtLogin: LaunchAtLoginManager
     @Binding var confirmDisconnectAll: Bool
     @Binding var confirmTeardown: Bool
 
@@ -505,6 +565,69 @@ private struct SecuritySetupPage: View {
                         .disabled(runtime.isWorking)
                     }
                 }
+            }
+
+            Panel {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Start at login")
+                        .font(.headline)
+                    Text(launchAtLogin.statusMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.muted)
+                    if let error = launchAtLogin.errorMessage {
+                        Text(error)
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.red)
+                    }
+                    HStack {
+                        if launchAtLogin.requiresApproval {
+                            Button("Open Login Items Settings") {
+                                launchAtLogin.openLoginItemsSettings()
+                            }
+                            .buttonStyle(.bordered)
+                        } else {
+                            Button(launchAtLogin.isEnabled ? "Disable" : "Enable at Login") {
+                                launchAtLogin.setEnabled(!launchAtLogin.isEnabled)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Panel {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Software updates")
+                        .font(.headline)
+                    Text("Current version: v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppTheme.muted)
+                    Text(updater.message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(updater.isUpdateAvailable ? AppTheme.orange : AppTheme.muted)
+                        .textSelection(.enabled)
+                    HStack {
+                        Button(updater.isChecking ? "Checking…" : "Check for Updates") {
+                            Task { await updater.checkNow() }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(updater.isChecking)
+                        if let url = updater.downloadURL {
+                            Button("Download Update") {
+                                NSWorkspace.shared.open(url)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        if updater.isUpdateAvailable, let url = updater.releaseURL {
+                            Button("Release Notes") {
+                                NSWorkspace.shared.open(url)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Panel {

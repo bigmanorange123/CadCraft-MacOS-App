@@ -1,19 +1,24 @@
 # CadCraft Connect
 
-CadCraft Connect exposes a local CadCraft desktop session to Claude through a Cloudflare Tunnel
-and an authenticated MCP bridge.
+CadCraft Connect exposes the official CadCraft Studio MCP tools to Claude through a Cloudflare
+Tunnel and an authenticated MCP bridge.
 
 ## What it does
 
-- Starts CadCraft with its local control interface, or reconnects to an existing session.
+- Sets up the connector without opening CadCraft Studio; opens Studio only when an agent requests a tool.
 - Signs in to Cloudflare using the system browser and creates a tunnel for a domain you choose.
 - Shows the connector URL to add in Claude under **Settings → Connectors → Add custom connector**.
+- If CadCraft Studio is missing, downloads and verifies the latest official release when an agent calls `studio_status`.
 - Requires your approval for every new client. Check the browser's six-digit code against the
   request shown in the app before approving it.
 
 The SwiftUI app bundles Node.js, its production dependencies, and `cloudflared`. Users do not need
-to install Node, npm packages, or `cloudflared`. CadCraft.app, a Cloudflare account with a domain,
-and network access are still required.
+to install Node, npm packages, or `cloudflared`. A Cloudflare account with a domain and network
+access are required. While Studio is closed, the connector exposes a status tool; requesting it
+installs and opens Studio if needed. The official Studio MCP bridge then supplies the Studio tools.
+Existing Studio installations are not replaced. CadCraft Connect checks for its own updates
+automatically and has a manual check in **Security & setup**.
+You can also enable or disable starting at login there.
 
 ## Releases
 
@@ -38,7 +43,7 @@ release.
 ## Development
 
 Build the app bundle locally with `./scripts/build-app.sh`. The build machine needs Swift, Node.js
-20+, and `cloudflared`; these are bundled into the resulting app. For service tests and development
+20.19+, and `cloudflared`; these are bundled into the resulting app. For service tests and development
 commands, see [`cadcraft-connect/README.md`](./cadcraft-connect/README.md).
 
 ## Security

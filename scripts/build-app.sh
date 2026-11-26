@@ -20,7 +20,7 @@ if [[ ! "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
   exit 1
 fi
 if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]]; then
-  echo "Node.js is required to build the app. Set BUNDLED_NODE to a Node 20+ binary." >&2
+  echo "Node.js 20.19 or newer is required to build the app. Set BUNDLED_NODE to a compatible binary." >&2
   exit 1
 fi
 if [[ -z "$CLOUDFLARED_BIN" || ! -x "$CLOUDFLARED_BIN" ]]; then
@@ -28,9 +28,9 @@ if [[ -z "$CLOUDFLARED_BIN" || ! -x "$CLOUDFLARED_BIN" ]]; then
   exit 1
 fi
 
-NODE_MAJOR="$("$NODE_BIN" -p 'Number(process.versions.node.split(".")[0])')"
-if (( NODE_MAJOR < 20 )); then
-  echo "Node.js 20 or newer is required to build the app." >&2
+NODE_VERSION="$("$NODE_BIN" -p 'process.versions.node.split(".").slice(0, 2).map(Number).join(".")')"
+if ! "$NODE_BIN" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 20 || (major === 20 && minor >= 19) ? 0 : 1)'; then
+  echo "Node.js 20.19 or newer is required to build the app (found $NODE_VERSION)." >&2
   exit 1
 fi
 ARCH="${TARGET_ARCH:-$(uname -m)}"

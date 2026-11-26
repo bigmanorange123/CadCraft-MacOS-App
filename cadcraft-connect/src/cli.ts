@@ -20,7 +20,7 @@ const svc = new ConnectService({
     return zones[Number(await rl.question("Which domain should the tunnel use? #")) - 1] ?? zones[0];
   },
   port: flag("--port") ? Number(flag("--port")) : undefined,
-  // Default: drive the CadCraft desktop app. --stdio or CADCRAFT_CMD uses a stdio MCP server instead.
+  // Default: use official CadCraft Studio. --stdio or CADCRAFT_CMD selects a custom MCP server.
   cadcraft: process.env.CADCRAFT_CMD ? { command: process.env.CADCRAFT_CMD, args: (process.env.CADCRAFT_ARGS ?? "mcp").split(" ") }
     : args.includes("--stdio") ? { command: "cadcraft-cli", args: ["mcp"] } : undefined,
   controlPort: flag("--control-port") ? Number(flag("--control-port")) : undefined,

@@ -14,7 +14,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 export type ProxyOptions =
-  | { kind: "stdio"; command: string; args: string[]; env?: Record<string, string> }
+  | {
+      kind: "stdio";
+      command: string;
+      args: string[];
+      env?: Record<string, string>;
+      ensureToolCall?: (name: string) => Promise<void>;
+    }
   /** `open` is called on every (re)connect, so it can relaunch CadCraft if it was closed. */
   | { kind: "inprocess"; open: () => Promise<{ server: McpServer; onClose: (cb: () => void) => void }> };
 
@@ -57,9 +63,40 @@ export class CadcraftProxy {
   async handle(req: Request, res: Response): Promise<void> {
     const client = await this.client();
     const server = new Server({ name: "cadcraft", version: "0.1.0" }, { capabilities: { tools: {} } });
-    server.setRequestHandler(ListToolsRequestSchema, (r) => client.listTools(r.params));
-    server.setRequestHandler(CallToolRequestSchema, (r) =>
-      this.serial(() => client.callTool(r.params, undefined, { timeout: 5 * 60_000 })) as Promise<any>);
+    server.setRequestHandler(ListToolsRequestSchema, async (r) => {
+      const result = await client.listTools(r.params);
+      if (this.o.kind !== "stdio" || !this.o.ensureToolCall) return result;
+      return {
+        ...result,
+        tools: result.tools.map((tool) => tool.name === "studio_status"
+          ? {
+              ...tool,
+              description: `${tool.description ?? ""} Calling this status tool from CadCraft Connect installs CadCraft Studio if needed and opens it on demand.`
+            }
+          : tool)
+      };
+    });
+    server.setRequestHandler(CallToolRequestSchema, (r) => this.serial(async () => {
+      if (this.o.kind === "stdio") await this.o.ensureToolCall?.(r.params.name);
+      if (this.o.kind === "stdio" && this.o.ensureToolCall && r.params.name === "studio_status") {
+        let tools = (await client.listTools()).tools;
+        const deadline = Date.now() + 5_000;
+        while (tools.some((tool) => tool.name === "studio_status") && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          tools = (await client.listTools()).tools;
+        }
+        return {
+          content: [{
+            type: "text",
+            text: tools.some((tool) => tool.name === "studio_status")
+              ? "CadCraft Studio is open and connecting. Refresh the CadCraft tool list in a few seconds."
+              : "CadCraft Studio is open. Refresh the CadCraft tool list, then retry the requested action."
+          }],
+          structuredContent: { running: true, toolCount: tools.length }
+        };
+      }
+      return client.callTool(r.params, undefined, { timeout: 5 * 60_000 });
+    }) as Promise<any>);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => { void transport.close(); void server.close(); });
     await server.connect(transport);

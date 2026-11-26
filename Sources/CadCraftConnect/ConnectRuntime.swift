@@ -60,7 +60,7 @@ final class ConnectRuntime: ObservableObject {
 
     var isReady: Bool { status == "ready" }
     var isWorking: Bool {
-        ["launching-cadcraft", "logging-in", "choosing-domain", "provisioning",
+        ["launching-studio", "logging-in", "choosing-domain", "provisioning",
          "starting", "connecting"].contains(status)
     }
 

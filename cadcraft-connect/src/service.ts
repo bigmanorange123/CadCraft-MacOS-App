@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
 import { Store, plainVault, type Vault, type TunnelInfo } from "./state.js";
@@ -6,12 +7,13 @@ import { LocalOAuthProvider, type PendingApproval } from "./oauthServer.js";
 import { CadcraftProxy } from "./proxy.js";
 import { createControlMcpServer } from "./control.js";
 import { ensureCadcraftRunning, CadcraftNotFound } from "./cadcraftApp.js";
+import { ensureCadcraftStudioReady } from "./cadcraftStudio.js";
 import { startHttp } from "./httpServer.js";
 import { McpLogin } from "./mcpLogin.js";
 import { CloudflareApi, type Zone } from "./cloudflare.js";
 import { CloudflaredRunner, findCloudflared } from "./cloudflared.js";
 
-export type Status = "idle" | "launching-cadcraft" | "logging-in" | "choosing-domain" | "provisioning" | "starting" | "connecting" | "ready" | "error";
+export type Status = "idle" | "launching-studio" | "logging-in" | "choosing-domain" | "provisioning" | "starting" | "connecting" | "ready" | "error";
 
 export interface ServiceOptions {
   mode: "cloudflare" | "local";
@@ -20,11 +22,13 @@ export interface ServiceOptions {
   vault?: Vault;
   store?: Store;
   port?: number;                         // local origin port (cloudflared forwards here)
-  /** If set, use a stdio MCP server (e.g. `cadcraft-cli mcp`) instead of the CadCraft app's control port */
+  /** If set, use a custom stdio MCP server instead of the bundled CadCraft Studio bridge. */
   cadcraft?: { command: string; args: string[] };
-  /** Control port of the CadCraft desktop app (default 7979) */
+  /** Optional Studio MCP process override, primarily for tests. */
+  studioMcp?: { command: string; args: string[]; env?: Record<string, string>; ensureToolCall?: (name: string) => Promise<void> };
+  /** Explicitly select the legacy CadCraft control-port integration (default port 7979). */
   controlPort?: number;
-  /** Path to .../CadCraft.app/Contents/MacOS/CADCraft; auto-detected in /Applications */
+  /** Path to a legacy CadCraft app executable; auto-detected in /Applications. */
   cadcraftBin?: string;
   /** Called when the app can't be found; return the binary path the user picked */
   locateApp?: () => Promise<string | undefined>;
@@ -45,11 +49,37 @@ export class ConnectService extends EventEmitter {
   constructor(private o: ServiceOptions) { super(); this.store = o.store ?? new Store(); }
   private set(s: Status, detail?: string) { this.status = s; this.emit("status", s, detail); }
 
-  /** Default: drive the CadCraft desktop app (launched with --control). `cadcraft` option: stdio server instead. */
+  /** Default: connect to CadCraft Studio on the first tool call. */
   private async makeProxy(): Promise<CadcraftProxy> {
     if (this.o.cadcraft) return new CadcraftProxy({ kind: "stdio", ...this.o.cadcraft });
+    if (this.o.studioMcp) return new CadcraftProxy({ kind: "stdio", ...this.o.studioMcp });
+    if (this.o.controlPort !== undefined || this.o.cadcraftBin !== undefined) {
+      return this.makeLegacyProxy();
+    }
+
+    const studioMcp = createRequire(import.meta.url).resolve("@getcadcraft/mcp/mcp/server.mjs");
+    return new CadcraftProxy({
+      kind: "stdio",
+      command: process.execPath,
+      args: [studioMcp, "connect"],
+      ensureToolCall: async () => {
+        this.set("launching-studio", "CadCraft Studio is opening for an agent tool call.");
+        try {
+          await ensureCadcraftStudioReady((message) => this.emit("log", message));
+          this.set("ready");
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.set("ready", `CadCraft Studio could not start: ${detail}`);
+          throw error;
+        }
+      }
+    });
+  }
+
+  private makeLegacyProxy(): CadcraftProxy {
     const port = this.o.controlPort ?? 7979;
     const ensure = async () => {
+      this.emit("log", "An agent requested a CadCraft tool; checking the desktop app.");
       const bin = this.store.s.settings?.cadcraftBin ?? this.o.cadcraftBin;
       try { return await ensureCadcraftRunning({ port, bin, log: (l) => this.emit("log", l) }); }
       catch (e) {
@@ -60,15 +90,10 @@ export class ConnectService extends EventEmitter {
         return ensureCadcraftRunning({ port, bin: picked, log: (l) => this.emit("log", l) });
       }
     };
-    this.set("launching-cadcraft");
-    await ensure();
-    const proxy = new CadcraftProxy({ kind: "inprocess", open: async () => {
-      await ensure(); // relaunches CadCraft if it was closed since the last request
-      const { server, client } = await createControlMcpServer(port);
+    return new CadcraftProxy({ kind: "inprocess", open: async () => {
+      const { server, client } = await createControlMcpServer(port, ensure);
       return { server, onClose: (cb) => client.once("close", cb) };
     } });
-    await proxy.toolNames(); // fail early (wrong token, port busy…) instead of on Claude's first call
-    return proxy;
   }
 
   private async cloudflare(): Promise<CloudflareApi> {

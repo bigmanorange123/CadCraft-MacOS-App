@@ -24,17 +24,39 @@ export function readToken(port: number): string {
 }
 
 export class ControlClient extends EventEmitter {
-  private sock?: Socket; private nextId = 1; private closed = false;
+  private sock?: Socket; private nextId = 1; private closed = false; private connecting?: Promise<void>;
   private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
-  constructor(private port: number) { super(); }
+  constructor(private port: number, private ensureReady?: () => Promise<unknown>) { super(); }
 
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
+    if (this.sock && !this.closed) return Promise.resolve();
+    if (!this.connecting) this.connecting = this.open().finally(() => { this.connecting = undefined; });
+    return this.connecting;
+  }
+
+  private async open(): Promise<void> {
+    await this.ensureReady?.();
     this.token = readToken(this.port);
     const sock = (this.sock = createConnection({ host: "127.0.0.1", port: this.port }));
-    await new Promise<void>((res, rej) => { sock.once("connect", res); sock.once("error", rej); });
+    await new Promise<void>((res, rej) => {
+      const onError = (error: Error) => {
+        sock.off("connect", onConnect);
+        if (this.sock === sock) this.sock = undefined;
+        this.closed = true;
+        sock.destroy();
+        rej(error);
+      };
+      const onConnect = () => {
+        sock.off("error", onError);
+        res();
+      };
+      sock.once("connect", onConnect);
+      sock.once("error", onError);
+    });
+    this.closed = false;
     sock.on("error", () => { /* surfaced through close */ });
     sock.on("close", () => {
-      this.closed = true;
+      if (this.sock === sock) this.closed = true;
       for (const [id, p] of this.pending) { clearTimeout(p.timer); p.reject(new Error("CadCraft closed the control connection")); this.pending.delete(id); }
       this.emit("close");
     });
@@ -45,11 +67,23 @@ export class ControlClient extends EventEmitter {
       if (m.ok) p.resolve(m.result);
       else p.reject(new Error((m.error ?? "control error") + (m.state === "may-have-run" ? " (the command may still have run: inspect the drawing before retrying)" : "")));
     });
-    await this.call("ping"); // proves the token is accepted before we serve anything
+    try {
+      await this.send("ping");
+    } catch (error) {
+      this.closed = true;
+      if (this.sock === sock) this.sock = undefined;
+      sock.destroy();
+      throw error;
+    }
   }
   private token = "";
 
-  call(method: string, params?: unknown, timeoutMs = 70_000): Promise<any> {
+  async call(method: string, params?: unknown, timeoutMs = 70_000): Promise<any> {
+    await this.connect();
+    return this.send(method, params, timeoutMs);
+  }
+
+  private send(method: string, params?: unknown, timeoutMs = 70_000): Promise<any> {
     return new Promise((resolve, reject) => {
       if (this.closed || !this.sock) return reject(new Error("Not connected to CadCraft"));
       const id = this.nextId++;
@@ -63,9 +97,8 @@ export class ControlClient extends EventEmitter {
 
 const text = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v ?? "ok") }] });
 
-export async function createControlMcpServer(port: number): Promise<{ server: McpServer; client: ControlClient }> {
-  const client = new ControlClient(port);
-  await client.connect();
+export async function createControlMcpServer(port: number, ensureReady?: () => Promise<unknown>): Promise<{ server: McpServer; client: ControlClient }> {
+  const client = new ControlClient(port, ensureReady);
   const server = new McpServer({ name: "cadcraft", version: "0.1.0" });
 
   server.tool("engine_execute", "Run a CadCraft command with JSON parameters. Never opens a dialog.",
