@@ -1,0 +1,34 @@
+{
+  "name": "cadcraft-connect",
+  "version": "0.1.0",
+  "description": "Mac menu-bar app that exposes CadCraft's MCP server to Claude over a Cloudflare Tunnel, protected by OAuth 2.1",
+  "type": "module",
+  "main": "dist/electron/main.js",
+  "bin": { "cadcraft-connect": "dist/src/cli.js" },
+  "scripts": {
+    "build": "tsc -p .",
+    "cli": "tsx src/cli.ts",
+    "app": "npm run build && electron .",
+    "test": "tsx test/e2e.ts && tsx test/control.ts",
+    "dist": "npm run build && electron-builder --mac"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "express": "^5.2.1",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "build": {
+    "appId": "com.yourcompany.cadcraftconnect",
+    "productName": "CadCraft Connect",
+    "mac": { "category": "public.app-category.developer-tools", "target": ["dmg"], "hardenedRuntime": true },
+    "files": ["dist/**", "package.json"]
+  }
+}

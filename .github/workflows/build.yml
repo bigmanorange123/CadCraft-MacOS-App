@@ -1,55 +1,139 @@
-name: Build & Release Universal macOS App
+name: Build and release macOS apps
 
 on:
   push:
     tags:
-      - "v*" # Triggers automatically when you push a tag like v1.0.0
-  workflow_dispatch: # Also lets you run it manually from the GitHub Actions tab
+      - "v*"
+  workflow_dispatch:
 
 permissions:
-  contents: write # Required to upload the zip to GitHub Releases
+  contents: write
 
 jobs:
   build:
-    runs-on: macos-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     steps:
-      - name: Checkout repository
+      - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Build Universal Binary (Apple Silicon + Intel)
-        run: |
-          swift build -c release --arch arm64 --arch x86_64
-
-      - name: Create .app Bundle
-        run: |
-          APP_NAME="MyMacApp"
-          BUILD_DIR=".build/apple/Products/Release"
-          APP_BUNDLE="$APP_NAME.app"
-
-          mkdir -p "$APP_BUNDLE/Contents/MacOS"
-          mkdir -p "$APP_BUNDLE/Contents/Resources"
-
-          # Copy the Universal binary and Info.plist into the bundle
-          cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-          cp "Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
-          cp "Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-
-          # Verify both architectures are inside the binary
-          lipo -info "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-
-      - name: Ad-Hoc Code Sign (Free)
-        run: |
-          codesign --force --deep --sign - MyMacApp.app
-          codesign --verify --verbose MyMacApp.app
-
-      - name: Zip the .app Bundle
-        run: |
-          # Use ditto so macOS preserves permissions and symlinks properly
-          ditto -c -k --sequesterRsrc --keepParent MyMacApp.app MyMacApp-Universal.zip
-
-      - name: Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          files: MyMacApp-Universal.zip
+          node-version: 22
+
+      - name: Install cloudflared for packaging
+        run: brew install cloudflared
+
+      - name: Test connection service
+        run: |
+          cd cadcraft-connect
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          npm test
+
+      - name: Import Developer ID certificate
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$MACOS_CERTIFICATE_P12_BASE64" || { echo "Missing MACOS_CERTIFICATE_P12_BASE64 secret" >&2; exit 1; }
+          test -n "$MACOS_CERTIFICATE_PASSWORD" || { echo "Missing MACOS_CERTIFICATE_PASSWORD secret" >&2; exit 1; }
+          KEYCHAIN_PATH="$RUNNER_TEMP/cadcraft-build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24 | tr -d '\n')"
+          CERTIFICATE_PATH="$RUNNER_TEMP/cadcraft-developer-id.p12"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Build app bundle
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            test -n "$SIGNING_IDENTITY" || { echo "Missing MACOS_SIGNING_IDENTITY secret" >&2; exit 1; }
+            test -n "$APPLE_ID" || { echo "Missing APPLE_ID secret" >&2; exit 1; }
+            test -n "$APPLE_APP_SPECIFIC_PASSWORD" || { echo "Missing APPLE_APP_SPECIFIC_PASSWORD secret" >&2; exit 1; }
+            test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID secret" >&2; exit 1; }
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            APP_VERSION="0.1.0"
+          fi
+          export APP_VERSION
+          export BUNDLED_NODE="$(command -v node)"
+          export BUNDLED_CLOUDFLARED="$(brew --prefix cloudflared)/bin/cloudflared"
+          APP="dist/CadCraft-Connect-${TARGET_ARCH}.app"
+          ./scripts/build-app.sh "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          DMG_ROOT="$RUNNER_TEMP/CadCraft-Connect-dmg-${TARGET_ARCH}"
+          mkdir -p "$DMG_ROOT"
+          ditto "$APP" "$DMG_ROOT/$(basename "$APP")"
+          ln -s /Applications "$DMG_ROOT/Applications"
+          DMG="${APP%.app}.dmg"
+          hdiutil create \
+            -volname "CadCraft Connect ${TARGET_ARCH}" \
+            -srcfolder "$DMG_ROOT" \
+            -ov \
+            -format UDZO \
+            "$DMG"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            xcrun notarytool submit "$DMG" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+            xcrun stapler staple "$DMG"
+            xcrun stapler validate "$DMG"
+          fi
+
+      - name: Upload architecture artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CadCraft-Connect-${{ matrix.arch }}
+          path: dist/CadCraft-Connect-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Intel and Apple Silicon builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: CadCraft-Connect-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/*.dmg --clobber
+          else
+            gh release create "$TAG" release-assets/*.dmg --generate-notes
+          fi

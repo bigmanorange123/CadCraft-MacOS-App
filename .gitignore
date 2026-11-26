@@ -2,4 +2,8 @@
 .swiftpm/
 *.app
 *.zip
+*.dmg
 .DS_Store
+cadcraft-connect/node_modules/
+cadcraft-connect/dist/
+/dist/

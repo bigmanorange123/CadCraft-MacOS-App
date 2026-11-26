@@ -2,19 +2,16 @@ import SwiftUI
 
 @main
 struct CadCraftConnect: App {
-    // Shared state between your desktop window and menu bar
-    @State private var statusText: String = "Ready"
+    @StateObject private var runtime = ConnectRuntime()
 
     var body: some Scene {
-        // 1. Main Desktop Window
-        WindowGroup("CadCraft Connect") {
-            ContentView(statusText: $statusText)
+        WindowGroup("CadCraft Connect", id: "main") {
+            ContentView(runtime: runtime)
         }
 
-        // 2. Menu Bar Icon & Popover Window
         MenuBarExtra("CadCraft Connect", systemImage: "bolt.fill") {
-            MenuBarView(statusText: $statusText)
+            MenuBarView(runtime: runtime)
         }
-        .menuBarExtraStyle(.window) // Makes it a full SwiftUI popover instead of a plain text menu
+        .menuBarExtraStyle(.window)
     }
 }
