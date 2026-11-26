@@ -56,6 +56,7 @@ cp "$ROOT/cadcraft-connect/tsconfig.json" "$CONNECT/"
 APP="$OUTPUT"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/connect/bin"
+cp "$ROOT/Recources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 swift build --package-path "$ROOT" --triple "$SWIFT_TRIPLE" -c release --product CadCraftConnect
 SWIFT_BIN_DIR="$(swift build --package-path "$ROOT" --triple "$SWIFT_TRIPLE" -c release --show-bin-path)"
 cp "$SWIFT_BIN_DIR/CadCraftConnect" "$APP/Contents/MacOS/CadCraftConnect"
@@ -164,6 +165,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.bigmanorange.CadCraftConnect</string>
   <key>CFBundleName</key><string>CadCraft Connect</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>

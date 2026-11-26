@@ -29,8 +29,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install cloudflared for packaging
-        run: brew install cloudflared
+      - name: Install packaging tools
+        run: brew install cloudflared create-dmg
 
       - name: Test connection service
         run: |
@@ -58,14 +58,21 @@ jobs:
           DMG_ROOT="$RUNNER_TEMP/CadCraft-Connect-dmg-${TARGET_ARCH}"
           mkdir -p "$DMG_ROOT"
           ditto "$APP" "$DMG_ROOT/$(basename "$APP")"
-          ln -s /Applications "$DMG_ROOT/Applications"
           DMG="${APP%.app}.dmg"
-          hdiutil create \
-            -volname "CadCraft Connect ${TARGET_ARCH}" \
-            -srcfolder "$DMG_ROOT" \
-            -ov \
-            -format UDZO \
-            "$DMG"
+          DMG_BACKGROUND="$RUNNER_TEMP/cadcraft-dmg-background.png"
+          swift scripts/create-dmg-background.swift "$DMG_BACKGROUND" "$GITHUB_WORKSPACE/Recources/AppIcon.icns"
+          create-dmg \
+            --volname "CadCraft Connect ${TARGET_ARCH}" \
+            --volicon "$GITHUB_WORKSPACE/Recources/AppIcon.icns" \
+            --background "$DMG_BACKGROUND" \
+            --window-pos 200 120 \
+            --window-size 750 500 \
+            --icon-size 100 \
+            --icon "$(basename "$APP")" 220 225 \
+            --hide-extension "$(basename "$APP")" \
+            --app-drop-link 530 225 \
+            "$DMG" \
+            "$DMG_ROOT"
 
       - name: Upload architecture artifact
         uses: actions/upload-artifact@v4
