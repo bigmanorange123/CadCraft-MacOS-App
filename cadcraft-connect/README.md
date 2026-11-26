@@ -13,8 +13,9 @@ verifies its published SHA-256 digest and macOS signature, installs it in `~/App
 opens it. Studio's tools become available after the MCP bridge refreshes; the agent may need to
 refresh its tool list and retry. Existing Studio installations are not replaced.
 
-CadCraft Connect checks its GitHub releases for updates daily and offers a manual check and matching
-architecture download in **Security & setup**. Startup-at-login is opt-in and can be changed there.
+CadCraft Connect checks its GitHub releases for updates daily and offers manual checks plus verified
+in-app update installation in **Security & setup**. Installing an update replaces the app bundle and
+restarts it. Startup-at-login is opt-in and can be changed there.
 
 ## What it does on first launch
 1. **Logs into Cloudflare** through Cloudflare's MCP server (OAuth 2.1 + PKCE, system browser, loopback redirect, `state` checked). The login is encrypted at rest with a random AES-256 key stored in macOS Keychain.

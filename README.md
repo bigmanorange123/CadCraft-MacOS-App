@@ -17,7 +17,8 @@ to install Node, npm packages, or `cloudflared`. A Cloudflare account with a dom
 access are required. While Studio is closed, the connector exposes a status tool; requesting it
 installs and opens Studio if needed. The official Studio MCP bridge then supplies the Studio tools.
 Existing Studio installations are not replaced. CadCraft Connect checks for its own updates
-automatically and has a manual check in **Security & setup**.
+automatically and has a manual check in **Security & setup**. You can install a verified update
+there; Connect replaces its app bundle and restarts.
 You can also enable or disable starting at login there.
 
 ## Releases

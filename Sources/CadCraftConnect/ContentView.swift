@@ -612,12 +612,17 @@ private struct SecuritySetupPage: View {
                             Task { await updater.checkNow() }
                         }
                         .buttonStyle(.bordered)
-                        .disabled(updater.isChecking)
-                        if let url = updater.downloadURL {
-                            Button("Download Update") {
-                                NSWorkspace.shared.open(url)
+                        .disabled(updater.isChecking || updater.isInstalling)
+                        if updater.canInstallUpdate {
+                            Button(updater.isInstalling ? "Installing…" : "Install Update") {
+                                Task { await updater.installUpdate() }
                             }
                             .buttonStyle(.borderedProminent)
+                            .disabled(updater.isInstalling)
+                        }
+                        if updater.isInstalling {
+                            ProgressView()
+                                .controlSize(.small)
                         }
                         if updater.isUpdateAvailable, let url = updater.releaseURL {
                             Button("Release Notes") {

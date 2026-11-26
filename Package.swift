@@ -10,6 +10,10 @@ let package = Package(
         .executableTarget(
             name: "CadCraftConnect",
             path: "Sources/CadCraftConnect"
+        ),
+        .executableTarget(
+            name: "CadCraftConnectUpdater",
+            path: "Sources/CadCraftConnectUpdater"
         )
     ]
 )

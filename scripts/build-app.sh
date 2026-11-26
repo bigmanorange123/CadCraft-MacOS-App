@@ -58,13 +58,17 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/connect/bin"
 cp "$ROOT/Recources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 swift build --package-path "$ROOT" --triple "$SWIFT_TRIPLE" -c release --product CadCraftConnect
+swift build --package-path "$ROOT" --triple "$SWIFT_TRIPLE" -c release --product CadCraftConnectUpdater
 SWIFT_BIN_DIR="$(swift build --package-path "$ROOT" --triple "$SWIFT_TRIPLE" -c release --show-bin-path)"
 cp "$SWIFT_BIN_DIR/CadCraftConnect" "$APP/Contents/MacOS/CadCraftConnect"
+mkdir -p "$APP/Contents/Helpers"
+cp "$SWIFT_BIN_DIR/CadCraftConnectUpdater" "$APP/Contents/Helpers/CadCraftConnectUpdater"
 cp -R "$CONNECT/dist" "$CONNECT/node_modules" "$APP/Contents/Resources/connect/"
 cp -L "$NODE_BIN" "$APP/Contents/Resources/connect/bin/node"
 cp -L "$CLOUDFLARED_BIN" "$APP/Contents/Resources/connect/bin/cloudflared"
-chmod 755 "$APP/Contents/Resources/connect/bin/node" "$APP/Contents/Resources/connect/bin/cloudflared"
+chmod 755 "$APP/Contents/Helpers/CadCraftConnectUpdater" "$APP/Contents/Resources/connect/bin/node" "$APP/Contents/Resources/connect/bin/cloudflared"
 lipo -archs "$APP/Contents/MacOS/CadCraftConnect" | tr ' ' '\n' | grep -qx "$ARCH"
+lipo -archs "$APP/Contents/Helpers/CadCraftConnectUpdater" | tr ' ' '\n' | grep -qx "$ARCH"
 
 python3 - "$APP/Contents/Resources/connect/bin/node" "$NODE_BIN" <<'PYTHON'
 import re
@@ -177,10 +181,12 @@ PLIST
 if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
   ENTITLEMENTS="$ROOT/scripts/distribution.entitlements"
   codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$APP/Contents/Resources/connect/bin/node"
+  codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP/Contents/Helpers/CadCraftConnectUpdater"
   find "$APP/Contents/Resources/connect/bin" -maxdepth 1 -type f -name '*.dylib' -exec codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" {} \;
   codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP/Contents/Resources/connect/bin/cloudflared"
   codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$APP"
 else
+  codesign --force --sign - "$APP/Contents/Helpers/CadCraftConnectUpdater"
   codesign --force --deep --sign - "$APP"
 fi
 
