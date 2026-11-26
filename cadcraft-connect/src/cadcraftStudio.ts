@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-const STUDIO_BUNDLE_ID = "com.getcadcraft.cadcraft";
+const STUDIO_BUNDLE_ID = "com.getcadcraft.studio";
 const RELEASE_API = "https://api.github.com/repos/getcadcraft/studio/releases/latest";
 const MAX_DMG_SIZE = 600 * 1024 * 1024;
 const CONNECT_FILE = join(homedir(), "Library", "Application Support", "CadCraft Studio", "connect.json");
