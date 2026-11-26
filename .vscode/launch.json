@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:CadCraft-MacOS-App}",
+            "name": "Debug CadCraftConnect",
+            "target": "CadCraftConnect",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug CadCraftConnect"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:CadCraft-MacOS-App}",
+            "name": "Release CadCraftConnect",
+            "target": "CadCraftConnect",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release CadCraftConnect"
+        }
+    ]
+}

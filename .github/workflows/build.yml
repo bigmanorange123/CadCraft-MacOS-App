@@ -1,0 +1,55 @@
+name: Build & Release Universal macOS App
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers automatically when you push a tag like v1.0.0
+  workflow_dispatch: # Also lets you run it manually from the GitHub Actions tab
+
+permissions:
+  contents: write # Required to upload the zip to GitHub Releases
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Universal Binary (Apple Silicon + Intel)
+        run: |
+          swift build -c release --arch arm64 --arch x86_64
+
+      - name: Create .app Bundle
+        run: |
+          APP_NAME="MyMacApp"
+          BUILD_DIR=".build/apple/Products/Release"
+          APP_BUNDLE="$APP_NAME.app"
+
+          mkdir -p "$APP_BUNDLE/Contents/MacOS"
+          mkdir -p "$APP_BUNDLE/Contents/Resources"
+
+          # Copy the Universal binary and Info.plist into the bundle
+          cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+          cp "Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+          cp "Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+
+          # Verify both architectures are inside the binary
+          lipo -info "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
+      - name: Ad-Hoc Code Sign (Free)
+        run: |
+          codesign --force --deep --sign - MyMacApp.app
+          codesign --verify --verbose MyMacApp.app
+
+      - name: Zip the .app Bundle
+        run: |
+          # Use ditto so macOS preserves permissions and symlinks properly
+          ditto -c -k --sequesterRsrc --keepParent MyMacApp.app MyMacApp-Universal.zip
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MyMacApp-Universal.zip
